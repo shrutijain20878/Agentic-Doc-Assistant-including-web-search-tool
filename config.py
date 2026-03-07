@@ -2,7 +2,7 @@
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceInferenceAPIEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceInferenceAPIEmbeddings
 
 # This looks for the .env file and loads the variables
 load_dotenv()

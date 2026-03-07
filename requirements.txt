@@ -12,3 +12,5 @@ duckduckgo-search
 ollama
 langchain_huggingface
 langchain_groq
+langchain-huggingface>=0.0.3
+huggingface-hub>=0.23.0
