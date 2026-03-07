@@ -2,7 +2,7 @@
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_huggingface.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 # This looks for the .env file and loads the variables
 load_dotenv()
@@ -21,9 +21,9 @@ LLM = ChatGroq(
 
 # 2. Embeddings Configuration
 # Switching to HuggingFace so it works in the cloud without Ollama
-embeddings = HuggingFaceInferenceAPIEmbeddings(
-    api_key=os.getenv("HF_TOKEN"), 
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDINGS = HuggingFaceEndpointEmbeddings(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    huggingfacehub_api_token=os.getenv("HF_TOKEN")
 )
 # 3. Chunking & Storage
 CHUNK_SIZE = 1000
