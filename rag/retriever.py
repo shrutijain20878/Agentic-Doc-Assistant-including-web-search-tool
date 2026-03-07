@@ -60,107 +60,40 @@ class HybridRetriever:
 def get_retriever():
     """
     Factory function to initialize and return the Hybrid Retriever.
+    Safely handles empty or missing vector stores on Render.
     """
-    if not os.path.exists(VECTOR_PATH):
-        # Return a dummy or handle empty state if directory doesn't exist yet
-        print("[WARNING] Vector path does not exist. Please upload documents first.")
+    # 1. Path Safety Check
+    if not os.path.exists(VECTOR_PATH) or not os.listdir(VECTOR_PATH):
+        print(f"[SYSTEM] Vector store path {VECTOR_PATH} is missing or empty.")
         return None
 
-    # Load Chroma vectorstore
-    vectordb = Chroma(
-        persist_directory=VECTOR_PATH, 
-        embedding_function=EMBEDDINGS
-    )
+    try:
+        # 2. Load Chroma vectorstore
+        vectordb = Chroma(
+            persist_directory=VECTOR_PATH, 
+            embedding_function=EMBEDDINGS
+        )
 
-    # Fetch all documents currently in the DB to build the BM25 index
-    # This ensures BM25 search only looks at the currently 'ingested' files
-    db_data = vectordb.get()
-    
-    all_docs = []
-    if db_data["documents"]:
+        # 3. Fetch data to rebuild BM25 index
+        db_data = vectordb.get()
+        
+        # 4. Content Safety Check: folder exists but might be a corrupted/empty DB
+        if not db_data or not db_data.get("documents"):
+            print("[SYSTEM] Vector store exists but contains no documents.")
+            return None
+        
+        all_docs = []
         for i in range(len(db_data["documents"])):
             all_docs.append(Document(
                 page_content=db_data["documents"][i],
                 metadata=db_data["metadatas"][i] if db_data["metadatas"] else {}
             ))
 
-    # Initialize the Hybrid logic
-    hybrid = HybridRetriever(vectordb, all_docs, k=5)
+        # 5. Initialize Hybrid Retriever
+        # (Ensure k=5 matches your memory constraints on Render)
+        hybrid = HybridRetriever(vectordb, all_docs, k=5)
+        return hybrid
 
-    return hybrid
-
-# # retriever.py
-# from langchain_chroma import Chroma
-# from config import EMBEDDINGS, VECTOR_PATH
-# from langchain_core.documents import Document
-# from rank_bm25 import BM25Okapi
-
-
-# class BM25RetrieverCustom:
-#     """
-#     Simple BM25 retriever that works on a list of Document objects.
-#     """
-#     def __init__(self, docs, k=4):
-#         # Ensure all docs are Document objects
-#         self.docs = [d if isinstance(d, Document) else Document(page_content=str(d), metadata={}) for d in docs]
-#         # tokenize corpus for BM25
-#         self.tokenized_corpus = [d.page_content.split() for d in self.docs]
-#         self.bm25 = BM25Okapi(self.tokenized_corpus)
-#         self.k = k
-
-#     def get_relevant_documents(self, query):
-#         query_tokens = query.split()
-#         scores = self.bm25.get_scores(query_tokens)
-#         top_n_idx = scores.argsort()[-self.k:][::-1]
-#         results = [self.docs[i] for i in top_n_idx]
-#         print(f"[BM25] Top {self.k} docs selected (by index): {top_n_idx}")
-#         return results
-
-
-# class HybridRetriever:
-#     """
-#     Hybrid Ensemble Retriever combining BM25 + Vector retriever
-#     """
-#     def __init__(self, vectorstore, bm25_docs, k=4, bm25_weight=0.5, vector_weight=0.5):
-#         self.vector_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-#         self.bm25_retriever = BM25RetrieverCustom(bm25_docs, k=k)
-#         self.k = k
-#         self.bm25_weight = bm25_weight
-#         self.vector_weight = vector_weight
-
-#     def get_relevant_documents(self, query):
-#         # BM25 results
-#         bm25_docs = self.bm25_retriever.invoke(query)
-#         # Vector results
-#         vector_docs = self.vector_retriever.invoke(query)
-
-#         # For debugging, print which doc comes from which retriever
-#         print("[Hybrid] BM25 docs:")
-#         for d in bm25_docs:
-#             print(f" - {d.page_content[:50]}...")
-
-#         print("[Hybrid] Vector docs:")
-#         for d in vector_docs:
-#             print(f" - {d.page_content[:50]}...")
-
-#         # Simple merge by weight (for now, just interleave)
-#         combined = bm25_docs[:int(self.k*self.bm25_weight)] + vector_docs[:int(self.k*self.vector_weight)]
-#         return combined[:self.k]  # final top-k
-
-
-# def get_retriever():
-#     # Load Chroma vectorstore
-#     vectordb = Chroma(
-#     persist_directory=VECTOR_PATH, 
-#     embedding_function=EMBEDDINGS
-# )
-
-#     # Get all documents from vectorstore for BM25
-#     docs = vectordb.get()["documents"]
-#     # Ensure Document objects
-#     all_docs = [d if isinstance(d, Document) else Document(page_content=str(d), metadata={}) for d in docs]
-
-#     # Create hybrid retriever
-#     hybrid = HybridRetriever(vectordb, all_docs, k=4, bm25_weight=0.5, vector_weight=0.5)
-
-#     return hybrid
+    except Exception as e:
+        print(f"[SYSTEM] Critical Error initializing retriever: {e}")
+        return None

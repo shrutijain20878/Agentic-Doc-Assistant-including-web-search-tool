@@ -4,7 +4,14 @@ from config import LLM
 
 def rag_tool(query):
     retriever = get_retriever()
-    docs = retriever.invoke(query)
+    if retriever is None:
+        print("[PRODUCTION LOG] Vector store not found. Redirecting to Web.")
+        return "NOT_FOUND"
+    try:
+        docs = retriever.invoke(query)
+    except Exception as e:
+        print(f"[ERROR] Retriever failed: {e}")
+        return "NOT_FOUND"
     
     # If no documents are found at all by the retriever
     if not docs:

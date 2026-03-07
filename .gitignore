@@ -6,3 +6,5 @@ vectorstore/
 venv/
 .ipynb_checkpoints/
 models/
+chat_sessions.json
+.vscode/

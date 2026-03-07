@@ -5,10 +5,11 @@ from tools.rag_tool import rag_tool
 from tools.summary_tool import summary_tool
 from tools.web_tool import web_tool
 from config import LLM
+from rag.retriever import get_retriever
 
 # 1. ROUTER NODE
 def router(state):
-    question = state["question"]
+    question = state["question"].lower()
     prompt = f"""
     Analyze the question: "{question}"
     
@@ -38,9 +39,30 @@ def chat_node(state):
 
 def rag_node(state):
     print(f"[AGENT] Attempting RAG for: {state['question']}")
-    res = rag_tool(state["question"])
-    # This might return "NOT_FOUND" or a Stream
-    return {"answer": res}
+    
+    # Get the retriever safely
+    retriever = get_retriever()
+    
+    # FALLBACK: If retriever is missing (None), skip straight to web search
+    if retriever is None:
+        print("[AGENT] No VectorStore found. Switching to Web Search fallback...")
+        return {"answer": "NOT_FOUND"}
+        
+    # If retriever exists, proceed as normal
+    docs = retriever.invoke(state["question"])
+    
+    if not docs:
+        return {"answer": "NOT_FOUND"}
+    
+    # ... rest of your existing logic (LLM check for context) ...
+    context = "\n".join([d.page_content for d in docs])
+    prompt = f"Answer using ONLY context. If not found, say NOT_FOUND.\nContext: {context}\nQuestion: {state['question']}"
+    
+    response = LLM.invoke(prompt).content.strip()
+    if "NOT_FOUND" in response.upper():
+        return {"answer": "NOT_FOUND"}
+        
+    return {"answer": LLM.stream(prompt)}
 
 def summary_node(state):
     return {"answer": summary_tool(state["question"])}
@@ -56,10 +78,8 @@ def route_tools(state):
     return state["tool"]
 
 def decide_after_rag(state):
-    """Decision block: If RAG failed, go to Web. Otherwise, End."""
     if state["answer"] == "NOT_FOUND":
-        print("[AGENT] Signal received: NOT_FOUND. Redirecting to Web Tool...")
-        return "web"
+        return "web"  # This now catches missing DBs AND missing info
     return "end"
 
 # 4. BUILD THE GRAPH
