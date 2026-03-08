@@ -67,9 +67,30 @@ def rag_node(state):
 def summary_node(state):
     return {"answer": summary_tool(state["question"])}
 
+# agent/graph.py
+
 def web_node(state):
-    content = web_tool(state["question"])
-    prompt = f"The documents didn't mention this. Based on the web info, answer the question: {state['question']}\n\nInfo:\n{content}"
+    print(f"[AGENT] Web Search for: {state['question']}")
+    
+    search_content = web_tool(state["question"])
+    
+    if "SEARCH_FAILED" in search_content:
+        # FALLBACK PROMPT: Instruct LLM to use its own knowledge
+        print("[AGENT] Search failed. Falling back to LLM internal knowledge.")
+        prompt = (
+            f"The user asked: '{state['question']}'.\n"
+            "Note: I currently cannot access live web data due to a connection issue. "
+            "Please answer the question to the best of your ability using your general internal knowledge."
+        )
+    else:
+        # STANDARD PROMPT: Use search results
+        prompt = (
+            f"Answer the question based on these web search results:\n\n"
+            f"{search_content}\n\n"
+            f"Question: {state['question']}"
+        )
+    
+    # Return the stream from your LLM (Groq/Gemini/etc.)
     return {"answer": LLM.stream(prompt)}
 
 # 3. CONDITIONAL ROUTING LOGIC
