@@ -4,6 +4,7 @@ from config import EMBEDDINGS, VECTOR_PATH
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 import os
+import gc
 
 class HybridRetriever:
     """
@@ -60,7 +61,7 @@ class HybridRetriever:
 def get_retriever():
     """
     Factory function to initialize and return the Hybrid Retriever.
-    Safely handles empty or missing vector stores on Render.
+    Optimized for low-memory environments like Render.
     """
     # 1. Path Safety Check
     if not os.path.exists(VECTOR_PATH) or not os.listdir(VECTOR_PATH):
@@ -74,14 +75,16 @@ def get_retriever():
             embedding_function=EMBEDDINGS
         )
 
-        # 3. Fetch data to rebuild BM25 index
-        db_data = vectordb.get()
+        # 3. Fetch data with a LIMIT to rebuild BM25 index
+        # We fetch only the most recent/relevant 200 chunks to avoid RAM spikes
+        db_data = vectordb.get(limit=200)
         
-        # 4. Content Safety Check: folder exists but might be a corrupted/empty DB
+        # 4. Content Safety Check
         if not db_data or not db_data.get("documents"):
             print("[SYSTEM] Vector store exists but contains no documents.")
             return None
         
+        # 5. Build Document objects efficiently
         all_docs = []
         for i in range(len(db_data["documents"])):
             all_docs.append(Document(
@@ -89,9 +92,15 @@ def get_retriever():
                 metadata=db_data["metadatas"][i] if db_data["metadatas"] else {}
             ))
 
-        # 5. Initialize Hybrid Retriever
-        # (Ensure k=5 matches your memory constraints on Render)
+        # 6. Initialize Hybrid Retriever
+        # k=3 or k=5 is ideal for Render's free tier
         hybrid = HybridRetriever(vectordb, all_docs, k=5)
+        
+        # --- THE CRITICAL FIX: Memory Cleanup ---
+        del db_data  # Remove the raw dictionary from RAM
+        gc.collect() # Force garbage collection
+        # -----------------------------------------
+
         return hybrid
 
     except Exception as e:
