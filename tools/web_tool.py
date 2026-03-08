@@ -1,7 +1,12 @@
 import asyncio
 import nest_asyncio
 from duckduckgo_search import DDGS # Updated Import
-
+# 1. FORCE standard asyncio loop if uvloop is present (Fix for Render)
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+except ImportError:
+    pass
 # Fix for Streamlit's event loop
 nest_asyncio.apply()
 
