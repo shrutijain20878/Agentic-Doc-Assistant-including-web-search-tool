@@ -35,37 +35,59 @@ def router(state):
 
 # 2. TOOL NODES
 def chat_node(state):
-    return {"answer": LLM.stream(state["question"])}
-
-def rag_node(state):
-    print(f"[AGENT] Attempting RAG for: {state['question']}")
-    
-    # Get the retriever safely
-    retriever = get_retriever()
-    
-    # FALLBACK: If retriever is missing (None), skip straight to web search
-    if retriever is None:
-        print("[AGENT] No VectorStore found. Switching to Web Search fallback...")
-        return {"answer": "NOT_FOUND"}
-        
-    # If retriever exists, proceed as normal
-    docs = retriever.invoke(state["question"])
-    
-    if not docs:
-        return {"answer": "NOT_FOUND"}
-    
-    # ... rest of your existing logic (LLM check for context) ...
-    context = "\n".join([d.page_content for d in docs])
-    prompt = f"Answer using ONLY context. If not found, say NOT_FOUND.\nContext: {context}\nQuestion: {state['question']}"
-    
-    response = LLM.invoke(prompt).content.strip()
-    if "NOT_FOUND" in response.upper():
-        return {"answer": "NOT_FOUND"}
-        
+    # Professional System Prompt for Greetings
+    prompt = f"You are a helpful AI Assistant. Respond politely to: {state['question']}"
     return {"answer": LLM.stream(prompt)}
 
+def rag_node(state):
+    # Just call your specialized tool
+    response = rag_tool(state["question"])
+    return {"answer": response}
+
+# def rag_node(state):
+#     print(f"[AGENT] Attempting RAG for: {state['question']}")
+    
+#     # Get the retriever safely
+#     retriever = get_retriever()
+    
+#     # FALLBACK: If retriever is missing (None), skip straight to web search
+#     if retriever is None:
+#         print("[AGENT] No VectorStore found. Switching to Web Search fallback...")
+#         return {"answer": "NOT_FOUND"}
+        
+#     # If retriever exists, proceed as normal
+#     docs = retriever.invoke(state["question"])
+    
+#     if not docs:
+#         return {"answer": "NOT_FOUND"}
+    
+#     # ... rest of your existing logic (LLM check for context) ...
+#     context = "\n".join([d.page_content for d in docs])
+#     prompt = f"Answer using ONLY context. If not found, say NOT_FOUND.\nContext: {context}\nQuestion: {state['question']}"
+    
+#     response = LLM.invoke(prompt).content.strip()
+#     if "NOT_FOUND" in response.upper():
+#         return {"answer": "NOT_FOUND"}
+        
+#     return {"answer": LLM.stream(prompt)}
+
+# def summary_node(state):
+#     return {"answer": summary_tool(state["question"])}
 def summary_node(state):
-    return {"answer": summary_tool(state["question"])}
+    print(f"[AGENT] Summarizing document based on: {state['question']}")
+    
+    retriever = get_retriever()
+    if retriever is None:
+        return {"answer": "No document uploaded to summarize."}
+        
+    # 1. Fetch ALL relevant content (or a large sample) for the summary
+    docs = retriever.invoke(state["question"])
+    context = "\n".join([d.page_content for d in docs])
+    
+    # 2. Pass the user's SPECIFIC request ("in 1 para") to the tool
+    summary = summary_tool(state["question"], context)
+    
+    return {"answer": summary}
 
 # agent/graph.py
 
