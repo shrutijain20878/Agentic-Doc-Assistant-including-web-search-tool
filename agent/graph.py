@@ -1,5 +1,7 @@
 # agent/graph.py
+
 from langgraph.graph import StateGraph, END
+
 from agent.state import AgentState
 from tools.rag_tool import rag_tool
 from tools.summary_tool import summary_tool
@@ -7,164 +9,351 @@ from tools.web_tool import web_tool
 from config import LLM
 from rag.retriever import get_retriever
 
+
+# ============================================================
 # 1. ROUTER NODE
+# ============================================================
+
 def router(state):
-    question = state["question"].lower()
+    question = state["question"]
+
     prompt = f"""
-    Analyze the question: "{question}"
-    
-    Assign to ONE tool:
-    - chat: General greetings, definitions, or philosophical questions.
-    - rag: Questions about the SPECIFIC contents of uploaded PDF documents.
-    - summary: If the user explicitly asks to summarize the uploaded document.
-    - web: Questions about real-time events, news, or facts not in the PDFs.
+You are the routing agent for an Agentic RAG Document Assistant.
 
-    Return ONLY the tool name.
-    """
-    raw_response = LLM.invoke(prompt).content.lower().strip()
-    
-    # Cleaning Logic to prevent KeyError from asterisks or quotes
-    tool = raw_response.replace("*", "").replace("'", "").replace('"', "").strip()
-    
-    valid_tools = ["rag", "summary", "web", "chat"]
-    if tool not in valid_tools:
-        tool = "chat"
-        
-    print(f"[AGENT] Routing: '{question}' -> tool: {tool}")
-    return {"tool": tool}
+Choose exactly ONE route.
 
-# 2. TOOL NODES
+RAG:
+Use when the user asks for information that may be present
+in an uploaded document.
+
+SUMMARY:
+Use when the user asks to summarize, summarize briefly,
+give an overview, or condense an uploaded document.
+
+WEB:
+Use when the user asks for current, live, recent, or external
+information.
+
+CHAT:
+Use for greetings, casual conversation, or general questions
+that do not require a document or current web information.
+
+Examples:
+
+hi -> CHAT
+hello -> CHAT
+what is RAG -> CHAT
+how many years of experience does Shruti have -> RAG
+what are Shruti's skills -> RAG
+what projects are mentioned -> RAG
+summarize -> SUMMARY
+summarize the uploaded document -> SUMMARY
+give me an overview of the resume -> SUMMARY
+latest current affairs -> WEB
+what is today's news -> WEB
+
+USER QUESTION:
+{question}
+
+Return ONLY one of:
+RAG
+SUMMARY
+WEB
+CHAT
+"""
+
+    try:
+
+        response = LLM.bind(
+            max_tokens=10
+        ).invoke(prompt)
+
+        raw = response.content.strip().upper()
+
+        print(f"[ROUTER RAW] {raw}")
+
+        if raw == "RAG":
+            tool = "rag"
+
+        elif raw == "SUMMARY":
+            tool = "summary"
+
+        elif raw == "WEB":
+            tool = "web"
+
+        elif raw == "CHAT":
+            tool = "chat"
+
+        else:
+            print(
+                f"[ROUTER] Unexpected response: {raw}"
+            )
+            tool = "chat"
+
+        print(
+            f"[AGENT] Routing: '{question}' -> tool: {tool}"
+        )
+
+        return {
+            "tool": tool
+        }
+
+    except Exception as e:
+
+        print(
+            f"[ROUTER] Error: {e}"
+        )
+
+        return {
+            "tool": "chat"
+        }
+
+# ============================================================
+# 2. CHAT NODE
+# ============================================================
+
 def chat_node(state):
-    # Professional System Prompt for Greetings
-    prompt = f"You are a helpful AI Assistant. Respond politely to: {state['question']}"
-    return {"answer": LLM.stream(prompt)}
+
+    prompt = f"""
+You are a helpful AI Assistant.
+
+Respond politely and concisely to:
+
+{state["question"]}
+"""
+
+    return {
+        "answer": LLM.stream(prompt)
+    }
+
+
+# ============================================================
+# 3. RAG NODE
+# ============================================================
 
 def rag_node(state):
-    # Just call your specialized tool
-    response = rag_tool(state["question"])
-    return {"answer": response}
 
-# def rag_node(state):
-#     print(f"[AGENT] Attempting RAG for: {state['question']}")
-    
-#     # Get the retriever safely
-#     retriever = get_retriever()
-    
-#     # FALLBACK: If retriever is missing (None), skip straight to web search
-#     if retriever is None:
-#         print("[AGENT] No VectorStore found. Switching to Web Search fallback...")
-#         return {"answer": "NOT_FOUND"}
-        
-#     # If retriever exists, proceed as normal
-#     docs = retriever.invoke(state["question"])
-    
-#     if not docs:
-#         return {"answer": "NOT_FOUND"}
-    
-#     # ... rest of your existing logic (LLM check for context) ...
-#     context = "\n".join([d.page_content for d in docs])
-#     prompt = f"Answer using ONLY context. If not found, say NOT_FOUND.\nContext: {context}\nQuestion: {state['question']}"
-    
-#     response = LLM.invoke(prompt).content.strip()
-#     if "NOT_FOUND" in response.upper():
-#         return {"answer": "NOT_FOUND"}
-        
-#     return {"answer": LLM.stream(prompt)}
+    print(
+        f"[AGENT] RAG question: {state['question']}"
+    )
 
-# def summary_node(state):
-#     return {"answer": summary_tool(state["question"])}
+    response = rag_tool(
+        state["question"]
+    )
+
+    return {
+        "answer": response
+    }
+
+
+# ============================================================
+# 4. SUMMARY NODE
+# ============================================================
+
 def summary_node(state):
-    print(f"[AGENT] Summarizing document based on: {state['question']}")
-    
-    retriever = get_retriever()
-    if retriever is None:
-        return {"answer": "No document uploaded to summarize."}
-        
-    # 1. Fetch ALL relevant content (or a large sample) for the summary
-    docs = retriever.invoke(state["question"])
-    context = "\n".join([d.page_content for d in docs])
-    
-    # 2. Pass the user's SPECIFIC request ("in 1 para") to the tool
-    summary = summary_tool(state["question"], context)
-    
-    return {"answer": summary}
 
-# agent/graph.py
+    print(
+        f"[AGENT] Summarizing document: "
+        f"{state['question']}"
+    )
+
+    retriever = get_retriever()
+
+    if retriever is None:
+
+        return {
+            "answer": "No document has been uploaded yet."
+        }
+
+    try:
+
+        docs = retriever.invoke(
+            state["question"]
+        )
+
+        if not docs:
+
+            return {
+                "answer": "I couldn't find any document content to summarize."
+            }
+
+        context = "\n".join(
+            doc.page_content
+            for doc in docs
+        )
+
+        summary = summary_tool(
+            state["question"],
+            context
+        )
+
+        return {
+            "answer": summary
+        }
+
+    except Exception as e:
+
+        print(
+            f"[SUMMARY] Error: {e}"
+        )
+
+        return {
+            "answer": "I couldn't summarize the document."
+        }
+
+
+# ============================================================
+# 5. WEB NODE
+# ============================================================
 
 def web_node(state):
-    print(f"[AGENT] Web Search for: {state['question']}")
-    
-    search_content = web_tool(state["question"])
-    
-    if "SEARCH_FAILED" in search_content:
-        # FALLBACK PROMPT: Instruct LLM to use its own knowledge
-        print("[AGENT] Search failed. Falling back to LLM internal knowledge.")
-        prompt = (
-            f"The user asked: '{state['question']}'.\n"
-            "Note: I currently cannot access live web data due to a connection issue. "
-            "Please answer the question to the best of your ability using your general internal knowledge."
-        )
-    else:
-        # STANDARD PROMPT: Use search results
-        prompt = (
-            f"Answer the question based on these web search results:\n\n"
-            f"{search_content}\n\n"
-            f"Question: {state['question']}"
-        )
-    
-    # Return the stream from your LLM (Groq/Gemini/etc.)
-    return {"answer": LLM.stream(prompt)}
 
-# 3. CONDITIONAL ROUTING LOGIC
+    print(
+        f"[AGENT] Web Search: "
+        f"{state['question']}"
+    )
+
+    search_content = web_tool(
+        state["question"]
+    )
+
+    if "SEARCH_FAILED" in search_content:
+
+        prompt = f"""
+The user asked:
+
+{state["question"]}
+
+Web search is currently unavailable.
+
+Answer using your general knowledge.
+Do not claim that you performed a web search.
+"""
+
+    else:
+
+        prompt = f"""
+Answer the user's question using the following web
+search results.
+
+WEB SEARCH RESULTS:
+{search_content}
+
+USER QUESTION:
+{state["question"]}
+
+Give a concise and useful answer.
+"""
+
+    return {
+        "answer": LLM.stream(prompt)
+    }
+
+
+# ============================================================
+# 6. ROUTING
+# ============================================================
+
 def route_tools(state):
-    """Initial routing from the router node."""
+
     return state["tool"]
 
+
 def decide_after_rag(state):
+
     if state["answer"] == "NOT_FOUND":
-        return "web"  # This now catches missing DBs AND missing info
+
+        print(
+            "[AGENT] RAG could not find the answer."
+        )
+
+        return "web"
+
     return "end"
 
-# 4. BUILD THE GRAPH
-builder = StateGraph(AgentState)
 
-# Add Nodes
-builder.add_node("router", router)
-builder.add_node("rag", rag_node)
-builder.add_node("summary", summary_node)
-builder.add_node("web", web_node)
-builder.add_node("chat", chat_node)
+# ============================================================
+# 7. BUILD LANGGRAPH
+# ============================================================
 
-# Define Flow
-builder.set_entry_point("router")
+builder = StateGraph(
+    AgentState
+)
 
-# Router -> Tools
+
+# Add nodes
+builder.add_node(
+    "router",
+    router
+)
+
+builder.add_node(
+    "rag",
+    rag_node
+)
+
+builder.add_node(
+    "summary",
+    summary_node
+)
+
+builder.add_node(
+    "web",
+    web_node
+)
+
+builder.add_node(
+    "chat",
+    chat_node
+)
+
+
+# Entry point
+builder.set_entry_point(
+    "router"
+)
+
+
+# Router → Tool
 builder.add_conditional_edges(
     "router",
     route_tools,
     {
         "rag": "rag",
         "summary": "summary",
-        "web": "rag",
+        "web": "web",
         "chat": "chat",
     }
 )
 
-# --- THE KEY FIX: RAG Fallback ---
-# If RAG is successful, it goes to END. If NOT_FOUND, it goes to WEB.
+
+# RAG → END / WEB fallback
 builder.add_conditional_edges(
     "rag",
     decide_after_rag,
     {
         "web": "web",
-        "end": END
+        "end": END,
     }
 )
 
-# Other nodes always go to END
-builder.add_edge("summary", END)
-builder.add_edge("web", END)
-builder.add_edge("chat", END)
+
+# Other tools → END
+builder.add_edge(
+    "summary",
+    END
+)
+
+builder.add_edge(
+    "web",
+    END
+)
+
+builder.add_edge(
+    "chat",
+    END
+)
+
 
 # Compile
 graph = builder.compile()

@@ -1,41 +1,28 @@
-import asyncio
-import nest_asyncio
-from ddgs import DDGS # Updated Import
-# 1. FORCE standard asyncio loop if uvloop is present (Fix for Render)
-# try:
-#     import uvloop
-#     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-# except ImportError:
-#     pass
-# Fix for Streamlit's event loop
-nest_asyncio.apply()
+from ddgs import DDGS
+
 
 def web_tool(query: str):
     """
-    Asynchronous web search using the latest DDGS interface.
+    Search the web using DuckDuckGo and return a small amount
+    of relevant context for the LLM.
     """
-    async def fetch_results():
-        try:
-            # The DDGS class now handles async natively in newer versions
-            with DDGS() as ddgs:
-                # We wrap the generator in a list for the result
-                results = [r for r in ddgs.text(query, max_results=3)]
-                
-                if not results:
-                    return "SEARCH_FAILED: No results found."
-                
-                context = "\n".join([
-                    f"Title: {r['title']}\nSnippet: {r['body']}" 
-                    for r in results
-                ])
-                return context
-        except Exception as e:
-            print(f"[ERROR] Search Tool Error: {e}")
-            return "SEARCH_FAILED: Connectivity issue."
-
     try:
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(fetch_results())
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=3))
+
+        if not results:
+            return "SEARCH_FAILED: No results found."
+
+        context = "\n".join(
+            [
+                f"Title: {result.get('title', '')}\n"
+                f"Snippet: {result.get('body', '')}"
+                for result in results
+            ]
+        )
+
+        return context
+
     except Exception as e:
-        # Fallback if the loop is already running and nest_asyncio failed
-        return "SEARCH_FAILED: Runtime error."
+        print(f"[ERROR] Search Tool Error: {e}")
+        return "SEARCH_FAILED: Connectivity issue."

@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 vectorstore/
 venv/
+deploy_test/
 .ipynb_checkpoints/
 models/
 chat_sessions.json

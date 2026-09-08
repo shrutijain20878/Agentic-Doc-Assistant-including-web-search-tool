@@ -5,14 +5,12 @@ langgraph
 langchain-text-splitters
 langchain-chroma
 chromadb
-sentence-transformers
 pypdf
 rank-bm25
-duckduckgo-search
-ollama
 langchain-huggingface
 langchain-groq
 huggingface-hub
 python-dotenv
 ddgs
 nest-asyncio
+sentence-transformers
